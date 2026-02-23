@@ -1,3 +1,4 @@
+using JumpShotBasketball.Core.Models.Awards;
 using JumpShotBasketball.Core.Models.Playoff;
 
 namespace JumpShotBasketball.Core.Models.League;
@@ -14,4 +15,7 @@ public class League
     public List<Transaction> Transactions { get; set; } = new();
     public List<Staff.StaffMember> StaffPool { get; set; } = new();
     public PlayoffBracket? Bracket { get; set; }
+    public SeasonAwards? Awards { get; set; }
+    public List<SeasonAwards> AwardsHistory { get; set; } = new();
+    public LeagueLeaderboard? Leaderboard { get; set; }
 }

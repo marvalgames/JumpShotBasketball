@@ -237,6 +237,33 @@ public static class StatisticsCalculator
     }
 
     // ───────────────────────────────────────────────────────────────
+    // Defense rating (award-specific)
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Aggregate defense rating for DPOY / All-Defense selection.
+    /// Ported from CPlayer::SetDefense() — Player.h:1828-1891.
+    /// </summary>
+    public static double CalculateDefenseRating(PlayerStatLine stats)
+    {
+        if (stats.Minutes <= 0 || stats.Games <= 0) return 0;
+
+        double games = stats.Games;
+        double oreb = stats.OffensiveRebounds;
+        double dreb = (stats.Rebounds - stats.OffensiveRebounds) / 3.0;
+        double fga = stats.FieldGoalsAttempted - stats.ThreePointersAttempted;
+        double fta = stats.FreeThrowsAttempted;
+
+        double rebRatio = dreb > 0 ? oreb / (dreb * 3) : 0;
+        double ftRatio = fga > 0 ? fta / fga : 0;
+
+        double defense = (stats.Steals + stats.Blocks + dreb - stats.PersonalFouls) / games;
+        defense = defense + ftRatio - rebRatio;
+
+        return defense;
+    }
+
+    // ───────────────────────────────────────────────────────────────
     // Composite ratings
     // ───────────────────────────────────────────────────────────────
 
