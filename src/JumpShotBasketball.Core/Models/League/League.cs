@@ -1,0 +1,17 @@
+using JumpShotBasketball.Core.Models.Playoff;
+
+namespace JumpShotBasketball.Core.Models.League;
+
+/// <summary>
+/// Top-level league aggregate: teams, schedule, settings, transactions.
+/// This is the root of the domain model, replacing CAverage as data owner.
+/// </summary>
+public class League
+{
+    public List<Team.Team> Teams { get; set; } = new();
+    public Schedule Schedule { get; set; } = new();
+    public LeagueSettings Settings { get; set; } = new();
+    public List<Transaction> Transactions { get; set; } = new();
+    public List<Staff.StaffMember> StaffPool { get; set; } = new();
+    public PlayoffBracket? Bracket { get; set; }
+}
