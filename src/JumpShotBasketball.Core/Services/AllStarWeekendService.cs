@@ -253,6 +253,7 @@ public static class AllStarWeekendService
             .Select(p => (Player: p, Score: CalculateThreePointScore(p)))
             .Where(x => x.Score > 0)
             .OrderByDescending(x => x.Score)
+            .DistinctBy(x => x.Player.Id)
             .Take(8)
             .Select(x => x.Player)
             .ToList();
@@ -265,6 +266,7 @@ public static class AllStarWeekendService
             .Select(p => (Player: p, Score: CalculateDunkScore(p)))
             .Where(x => x.Score > 0)
             .OrderByDescending(x => x.Score)
+            .DistinctBy(x => x.Player.Id)
             .Take(8)
             .Select(x => x.Player)
             .ToList();
@@ -291,8 +293,10 @@ public static class AllStarWeekendService
             HighestRoundReached = 1
         }).ToList();
 
-        // Map contestant index to their Player for stat access
-        var playerLookup = contestants.Take(8).ToDictionary(p => p.Id);
+        // Map contestant index to their Player for stat access (handle potential duplicate IDs)
+        var playerLookup = contestants.Take(8)
+            .GroupBy(p => p.Id)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // Round 1: all 8 shoot
         SimulateThreePointRound(participants, playerLookup, 1, random);
@@ -365,7 +369,9 @@ public static class AllStarWeekendService
             HighestRoundReached = 1
         }).ToList();
 
-        var playerLookup = contestants.Take(8).ToDictionary(p => p.Id);
+        var playerLookup = contestants.Take(8)
+            .GroupBy(p => p.Id)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // Round 1: all 8 dunk
         SimulateDunkRound(participants, playerLookup, 1, random);
@@ -648,7 +654,9 @@ public static class AllStarWeekendService
     private static void StoreContestScores(Models.League.League league, AllStarWeekendResult result)
     {
         // Find players in the league and store their contest scores
-        var playerLookup = league.Teams.SelectMany(t => t.Roster).ToDictionary(p => p.Id, p => p);
+        var playerLookup = league.Teams.SelectMany(t => t.Roster)
+            .GroupBy(p => p.Id)
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var cp in result.ThreePointContestants)
         {

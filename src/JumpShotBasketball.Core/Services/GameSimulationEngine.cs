@@ -101,6 +101,7 @@ public class GameSimulationEngine
         {
             _players[co] = p;
             p.GameState.Reset();
+            p.GameState.GameName = p.Name; // For PostGameProcessor player matching
 
             if (p.Injury == 0 && !string.IsNullOrEmpty(p.Name) && p.Active
                 && co <= 12 && p.SeasonStats.Minutes >= 72)
@@ -123,6 +124,7 @@ public class GameSimulationEngine
         {
             _players[co] = p;
             p.GameState.Reset();
+            p.GameState.GameName = p.Name; // For PostGameProcessor player matching
 
             if (p.Injury == 0 && !string.IsNullOrEmpty(p.Name) && p.Active
                 && homeCo <= 12 && p.SeasonStats.Minutes >= 72)
