@@ -44,6 +44,16 @@ public static class PostGameProcessor
             UpdateTeamSeasonHighs(homeTeam, result.HomeBoxScore, game.Type);
         }
 
+        // 4a. Update record book single-game records
+        if (league.RecordBook != null && game.Type != GameType.Exhibition
+            && game.Type != GameType.AllStar && game.Type != GameType.Rookie)
+        {
+            RecordBookService.UpdateSingleGameRecords(league.RecordBook,
+                result.VisitorBoxScore, visitorTeam, game.VisitorTeamIndex, game.Type, league.Settings.CurrentYear);
+            RecordBookService.UpdateSingleGameRecords(league.RecordBook,
+                result.HomeBoxScore, homeTeam, game.HomeTeamIndex, game.Type, league.Settings.CurrentYear);
+        }
+
         // 5. Record starters (League games only)
         if (game.Type == GameType.League)
         {

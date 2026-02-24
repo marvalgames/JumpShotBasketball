@@ -1,3 +1,4 @@
+using JumpShotBasketball.Core.Models.History;
 using JumpShotBasketball.Core.Models.League;
 using JumpShotBasketball.Core.Models.Player;
 using JumpShotBasketball.Core.Models.Staff;
@@ -163,6 +164,11 @@ public static class LeagueCreationService
         InitializeDraftBoard(league);
         ScheduleGenerationService.GenerateSchedule(league, options.GamesPerSeason, random: random);
         RotationService.SetComputerRotations(league);
+
+        // Initialize record book + franchise histories
+        RecordBookService.EnsureInitialized(league);
+        league.FranchiseHistories = league.Teams.Select((t, i) => new FranchiseHistory
+            { TeamIndex = i, TeamName = t.Name }).ToList();
 
         return league;
     }

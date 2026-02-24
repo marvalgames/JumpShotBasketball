@@ -1,3 +1,4 @@
+using JumpShotBasketball.Core.Models.History;
 using JumpShotBasketball.Core.Models.League;
 using JumpShotBasketball.Core.Models.Player;
 
@@ -37,6 +38,13 @@ public static class OffSeasonService
                 if (player.SimulatedStats.Games > 0)
                     PlayerDevelopmentService.ArchiveSeasonStats(player, previousYear);
             }
+        }
+
+        // 3a. Update record book season and career records
+        if (league.RecordBook != null)
+        {
+            RecordBookService.UpdateSeasonRecords(league.RecordBook, league, previousYear);
+            RecordBookService.UpdateCareerRecords(league.RecordBook, league, previousYear);
         }
 
         // 4. Compute league highs → projection ratings for all players
@@ -98,6 +106,9 @@ public static class OffSeasonService
         // 6. Apply player development (aging/improvement/decline)
         PlayerDevelopmentService.DevelopPlayers(league, random);
 
+        // 6a. Archive franchise season records
+        FranchiseHistoryService.ArchiveSeasonRecords(league, previousYear);
+
         // 7. Reset season state
         ResetSeasonState(league);
 
@@ -148,11 +159,19 @@ public static class OffSeasonService
         league.Transactions.Clear();
         league.Settings.NumberOfTransactions = 0;
 
+        // Archive awards before clearing
+        if (league.Awards != null)
+            league.AwardsHistory.Add(league.Awards);
+
         // Clear bracket, awards, leaderboard, all-star
         league.Bracket = null;
         league.Awards = null;
         league.Leaderboard = null;
         league.AllStarWeekend = null;
+
+        // Clear season single-game records (preserves all-time season/career)
+        if (league.RecordBook != null)
+            RecordBookService.ClearSeasonGameHighs(league.RecordBook);
 
         // Clear player season stats and flags
         foreach (var team in league.Teams)
