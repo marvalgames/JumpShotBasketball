@@ -31,6 +31,10 @@ public class GameSimulationEngine
     private Team _visitorTeam = null!;
     private Team _homeTeam = null!;
 
+    // Saved intensity values for restore after game (AI coaching modifies these)
+    private int[] _savedOffensiveIntensity = null!;
+    private int[] _savedDefensiveIntensity = null!;
+
     public GameSimulationEngine(Random? random = null)
     {
         _random = random ?? Random.Shared;
@@ -61,6 +65,8 @@ public class GameSimulationEngine
 
         Initialize();
         SetupLineups();
+        AdjustIntensityForGamePlan();
+        InitializeCoachBudgets();
         StartGame();
 
         // Main game loop — process possessions until game over
@@ -162,6 +168,38 @@ public class GameSimulationEngine
         _state.TimeRemainingSeconds = 720;
         _state.Score[1] = 0;
         _state.Score[2] = 0;
+
+        // Save intensity values (AI coaching may modify these during the game)
+        _savedOffensiveIntensity = new int[61];
+        _savedDefensiveIntensity = new int[61];
+        for (int i = 1; i <= 60; i++)
+        {
+            if (_players[i] != null)
+            {
+                _savedOffensiveIntensity[i] = _players[i].OffensiveIntensity;
+                _savedDefensiveIntensity[i] = _players[i].DefensiveIntensity;
+            }
+        }
+    }
+
+    private void InitializeCoachBudgets()
+    {
+        // Budget = (fga + tfga + foulsDrawn + to) * 3 per player
+        for (int i = 1; i <= 60; i++)
+        {
+            if (_players[i] == null || string.IsNullOrEmpty(_players[i].Name)) continue;
+            var r = _players[i].Ratings;
+            double fga = r.AdjustedFieldGoalsAttemptedPer48Min > 0
+                ? r.AdjustedFieldGoalsAttemptedPer48Min : r.FieldGoalsAttemptedPer48Min;
+            double tfga = r.AdjustedThreePointersAttemptedPer48Min > 0
+                ? r.AdjustedThreePointersAttemptedPer48Min : r.ThreePointersAttemptedPer48Min;
+            double fd = r.AdjustedFoulsDrawnPer48Min > 0
+                ? r.AdjustedFoulsDrawnPer48Min : r.FoulsDrawnPer48Min;
+            double to = r.AdjustedTurnoversPer48Min > 0
+                ? r.AdjustedTurnoversPer48Min : r.TurnoversPer48Min;
+
+            _state.CoachFgaBudget[i] = (fga + tfga + fd + to) * 3;
+        }
     }
 
     #endregion
@@ -408,7 +446,7 @@ public class GameSimulationEngine
         int currentTeam = _state.Possession;
 
         // Fastbreak check
-        if (_state.FastbreakChance && !forced3)
+        if (_state.FastbreakChance && !forced3 && !_state.Timeouts.TimeoutCalledThisPossession)
         {
             _state.FastbreakChance = false;
             int p = IntRandom(5);
@@ -477,6 +515,10 @@ public class GameSimulationEngine
         bool putBack = false;
         bool threePointer = false;
         bool block = false;
+
+        // Track scoring before this possession for opponent run tracking
+        int scoreBefore1 = _state.Score[1];
+        int scoreBefore2 = _state.Score[2];
 
         do // Main play loop (repeats for putbacks)
         {
@@ -590,8 +632,18 @@ public class GameSimulationEngine
             }
         }
 
+        // Update opponent scoring run tracker
+        UpdateOpponentRun(scoreBefore1, scoreBefore2);
+
         // Auto-substitute
         AutoSubstitute();
+
+        // AI coaching: auto-timeout for computer teams
+        TryAutoTimeout(1);
+        TryAutoTimeout(2);
+
+        // Clear per-possession timeout flags
+        ClearTimeoutFlags();
     }
 
     #endregion
@@ -602,6 +654,61 @@ public class GameSimulationEngine
     {
         double[] touches = new double[6];
         int ballHandler = 0;
+
+        // Called Shot system: check designated ball handler
+        int designated = _state.DesignatedBallHandler[possession];
+        if (designated > 0 && designated <= 60 && _players[designated] != null
+            && !string.IsNullOrEmpty(_players[designated].Name))
+        {
+            // Verify designated player is on court
+            int designatedPos = 0;
+            for (int pos = 1; pos <= 5; pos++)
+            {
+                if (_state.Lineup[possession, pos] == designated)
+                {
+                    designatedPos = pos;
+                    break;
+                }
+            }
+
+            if (designatedPos > 0)
+            {
+                // Build touches for budget test
+                double tempTouches = 0;
+                for (int i = 1; i <= 5; i++)
+                {
+                    int pl = _state.Lineup[possession, i];
+                    if (pl <= 0 || pl > 60) continue;
+                    tempTouches += GetAdjustedFgaPer48(pl) + GetAdjustedTfgaPer48(pl)
+                                 + GetAdjustedFoulsDrawnPer48(pl) + GetAdjustedToPer48(pl);
+                }
+
+                double budget = _state.CoachFgaBudget[designated];
+                double timeoutMult = GetTimeoutMultiplier(possession);
+
+                // Budget test: Random(touches) <= budget * timeoutMultiplier
+                if (tempTouches > 0 && RandomDouble(tempTouches) <= budget * timeoutMult)
+                {
+                    // Deduct 2 from budget, enforce floor at 50% initial
+                    double initialBudget = 0;
+                    var r = _players[designated].Ratings;
+                    double fga = r.AdjustedFieldGoalsAttemptedPer48Min > 0
+                        ? r.AdjustedFieldGoalsAttemptedPer48Min : r.FieldGoalsAttemptedPer48Min;
+                    double tfga = r.AdjustedThreePointersAttemptedPer48Min > 0
+                        ? r.AdjustedThreePointersAttemptedPer48Min : r.ThreePointersAttemptedPer48Min;
+                    double fd = r.AdjustedFoulsDrawnPer48Min > 0
+                        ? r.AdjustedFoulsDrawnPer48Min : r.FoulsDrawnPer48Min;
+                    double to = r.AdjustedTurnoversPer48Min > 0
+                        ? r.AdjustedTurnoversPer48Min : r.TurnoversPer48Min;
+                    initialBudget = (fga + tfga + fd + to) * 3;
+
+                    _state.CoachFgaBudget[designated] = Math.Max(initialBudget * 0.5, budget - 2);
+
+                    _state.PositionBallHandler = designatedPos;
+                    return designated;
+                }
+            }
+        }
 
         // Calculate touches distribution
         int totMov = 0, totPen = 0, totPost = 0;
@@ -1657,6 +1764,9 @@ public class GameSimulationEngine
         int postDef = def.Ratings.PostDefenseRaw;
         int transDef = def.Ratings.TransitionDefenseRaw;
 
+        // Defensive game plan adjustments
+        AdjustDefenseForGamePlan(def, ref movDef, ref penDef, ref postDef, ref transDef);
+
         // Coach defense adjustments
         int defTeam = _state.Possession == 1 ? 2 : 1;
         int adjForCoach = IntRandom(2);
@@ -2101,7 +2211,15 @@ public class GameSimulationEngine
             _state.MilkClock = false;
         }
 
+        int prevTime = _state.TimeRemainingSeconds;
         _state.TimeRemainingSeconds -= seconds;
+
+        // Q2 5:00 mark: reset both teams to 3 full timeouts
+        if (_state.Quarter == 2 && prevTime > 300 && _state.TimeRemainingSeconds <= 300)
+        {
+            _state.Timeouts.FullTimeouts[1] = Math.Max(_state.Timeouts.FullTimeouts[1], 3);
+            _state.Timeouts.FullTimeouts[2] = Math.Max(_state.Timeouts.FullTimeouts[2], 3);
+        }
 
         if (_state.TimeRemainingSeconds <= 0)
         {
@@ -2122,6 +2240,66 @@ public class GameSimulationEngine
     {
         _state.Quarter++;
         _state.TimeRemainingSeconds = _state.Quarter < 5 ? 720 : 300;
+    }
+
+    private void CallTimeout(int teamSide, bool twentySec)
+    {
+        if (teamSide < 1 || teamSide > 2) return;
+
+        if (twentySec)
+        {
+            if (_state.Timeouts.TwentySecTimeouts[teamSide] <= 0) return;
+            _state.Timeouts.TwentySecTimeouts[teamSide]--;
+            _state.Timeouts.TwentySecCalled[teamSide] = true;
+        }
+        else
+        {
+            if (_state.Timeouts.FullTimeouts[teamSide] <= 0) return;
+            _state.Timeouts.FullTimeouts[teamSide]--;
+            _state.Timeouts.TimeoutCalled[teamSide] = true;
+        }
+
+        _state.Timeouts.TimeoutCalledThisPossession = true;
+
+        string teamName = GetTeamName(teamSide);
+        AddPbp(PlayByPlayGenerator.Timeout(teamName, twentySec));
+    }
+
+    private void ClearTimeoutFlags()
+    {
+        _state.Timeouts.TimeoutCalled[1] = false;
+        _state.Timeouts.TimeoutCalled[2] = false;
+        _state.Timeouts.TwentySecCalled[1] = false;
+        _state.Timeouts.TwentySecCalled[2] = false;
+        _state.Timeouts.TimeoutCalledThisPossession = false;
+    }
+
+    private double GetTimeoutMultiplier(int teamSide)
+    {
+        if (teamSide < 1 || teamSide > 2) return 1.0;
+        if (_state.Timeouts.TimeoutCalled[teamSide]) return 3.0;
+        if (_state.Timeouts.TwentySecCalled[teamSide]) return 2.0;
+        return 1.0;
+    }
+
+    private void ReplenishTimeouts()
+    {
+        // At 5:00 remaining in Q2 (mid-quarter): reset both teams to 3 full
+        // Entering Q3 (halftime): reset 20-sec to 1 each
+        // Entering Q4: reset both teams to 4 full
+
+        int q = _state.Quarter;
+
+        if (q == 3) // Halftime
+        {
+            _state.Timeouts.TwentySecTimeouts[1] = 1;
+            _state.Timeouts.TwentySecTimeouts[2] = 1;
+        }
+        else if (q == 4) // Entering Q4
+        {
+            _state.Timeouts.FullTimeouts[1] = Math.Max(_state.Timeouts.FullTimeouts[1], 4);
+            _state.Timeouts.FullTimeouts[2] = Math.Max(_state.Timeouts.FullTimeouts[2], 4);
+        }
     }
 
     private void SetAverageTime(double avgPoss, double avgOreb)
@@ -2244,6 +2422,9 @@ public class GameSimulationEngine
         _state.TeamFouls[1] = 0;
         _state.TeamFouls[2] = 0;
 
+        // Timeout replenishment at quarter boundaries
+        ReplenishTimeouts();
+
         // Half-time stamina reset
         if (q == 3)
         {
@@ -2258,6 +2439,10 @@ public class GameSimulationEngine
         }
 
         AutoSubstitute();
+
+        // AI strategy adaptation at quarter boundaries
+        AdaptComputerStrategy(1);
+        AdaptComputerStrategy(2);
     }
 
     private void CalculateQuarterScore(int quarter)
@@ -2300,6 +2485,16 @@ public class GameSimulationEngine
 
     private GameResult FinalizeGame()
     {
+        // Restore AI-modified intensity values
+        for (int i = 1; i <= 60; i++)
+        {
+            if (_players[i] != null)
+            {
+                _players[i].OffensiveIntensity = _savedOffensiveIntensity[i];
+                _players[i].DefensiveIntensity = _savedDefensiveIntensity[i];
+            }
+        }
+
         // Build box scores
         var visitorBox = new List<PlayerGameState>();
         var homeBox = new List<PlayerGameState>();
@@ -2317,6 +2512,13 @@ public class GameSimulationEngine
 
         int mvpIndex = DetermineGameMvp();
 
+        // Calculate timeouts used: initial - remaining
+        int visitorTOUsed = (7 - _state.Timeouts.FullTimeouts[1]) + (1 - _state.Timeouts.TwentySecTimeouts[1]);
+        int homeTOUsed = (7 - _state.Timeouts.FullTimeouts[2]) + (1 - _state.Timeouts.TwentySecTimeouts[2]);
+        // Replenishment can increase counts, so clamp to non-negative
+        visitorTOUsed = Math.Max(0, visitorTOUsed);
+        homeTOUsed = Math.Max(0, homeTOUsed);
+
         return new GameResult
         {
             VisitorScore = _state.Score[1],
@@ -2328,7 +2530,9 @@ public class GameSimulationEngine
             MvpPlayerIndex = mvpIndex,
             PlayByPlay = _state.PlayByPlay,
             VisitorTeamIndex = _state.VisitorIndex,
-            HomeTeamIndex = _state.HomeIndex
+            HomeTeamIndex = _state.HomeIndex,
+            VisitorTimeoutsUsed = visitorTOUsed,
+            HomeTimeoutsUsed = homeTOUsed
         };
     }
 
@@ -2437,6 +2641,127 @@ public class GameSimulationEngine
         }
     }
 
+    private void AdjustIntensityForGamePlan()
+    {
+        // Save original per-48 values and apply intensity/playmaker/focus adjustments.
+        // Called once at game start, after SetupLineups sets Adjusted* fields.
+        for (int i = 1; i <= 60; i++)
+        {
+            if (_players[i] == null || string.IsNullOrEmpty(_players[i].Name)) continue;
+            var p = _players[i];
+            var r = p.Ratings;
+
+            // Save originals (for reset if needed by AdaptComputerStrategy)
+            if (r.OriginalAdjustedTurnoversPer48Min == 0)
+                r.OriginalAdjustedTurnoversPer48Min = r.AdjustedTurnoversPer48Min > 0
+                    ? r.AdjustedTurnoversPer48Min : r.TurnoversPer48Min;
+            if (r.OriginalPersonalFoulsPer48Min == 0)
+                r.OriginalPersonalFoulsPer48Min = r.PersonalFoulsPer48Min;
+            if (r.OriginalAssistsPer48Min == 0)
+                r.OriginalAssistsPer48Min = r.AssistsPer48Min;
+            if (r.OriginalOffensiveReboundsPer48Min == 0)
+                r.OriginalOffensiveReboundsPer48Min = r.OffensiveReboundsPer48Min;
+            if (r.OriginalDefensiveReboundsPer48Min == 0)
+                r.OriginalDefensiveReboundsPer48Min = r.DefensiveReboundsPer48Min;
+
+            // OffensiveIntensity: factor = (100 + intensity * 5) / 100
+            if (p.OffensiveIntensity != 0)
+            {
+                double factor = (100 + p.OffensiveIntensity * 5) / 100.0;
+                r.AdjustedFieldGoalsAttemptedPer48Min = (r.OriginalAdjustedFieldGoalsAttemptedPer48Min > 0
+                    ? r.OriginalAdjustedFieldGoalsAttemptedPer48Min : r.FieldGoalsAttemptedPer48Min) * factor;
+                r.AdjustedThreePointersAttemptedPer48Min = (r.OriginalAdjustedThreePointersAttemptedPer48Min > 0
+                    ? r.OriginalAdjustedThreePointersAttemptedPer48Min : r.ThreePointersAttemptedPer48Min) * factor;
+                r.AdjustedFoulsDrawnPer48Min = (r.OriginalAdjustedFoulsDrawnPer48Min > 0
+                    ? r.OriginalAdjustedFoulsDrawnPer48Min : r.FoulsDrawnPer48Min) * factor;
+                r.AdjustedTurnoversPer48Min = r.OriginalAdjustedTurnoversPer48Min * factor;
+            }
+
+            // DefensiveIntensity: factor = (100 + intensity * 5) / 100
+            if (p.DefensiveIntensity != 0)
+            {
+                double defFactor = (100 + p.DefensiveIntensity * 5) / 100.0;
+                r.StealsPer48Min = (r.OriginalStealsPer48Min > 0
+                    ? r.OriginalStealsPer48Min : r.StealsPer48Min) * defFactor;
+                r.BlocksPer48Min = (r.OriginalBlocksPer48Min > 0
+                    ? r.OriginalBlocksPer48Min : r.BlocksPer48Min) * defFactor;
+                r.PersonalFoulsPer48Min = r.OriginalPersonalFoulsPer48Min * defFactor;
+            }
+
+            // PlayMaker: bhFactor = (100 + playmaker * Random(content)) / 100
+            if (p.PlayMaker != 0)
+            {
+                int contentRoll = p.Content > 0 ? IntRandom(p.Content) : IntRandom(5);
+                double bhFactor = (100 + p.PlayMaker * contentRoll) / 100.0;
+                // Playmaker: more assists, fewer personal shots
+                r.AssistsPer48Min = r.OriginalAssistsPer48Min * bhFactor;
+                r.AdjustedFieldGoalsAttemptedPer48Min *= (2 - bhFactor);
+            }
+
+            // OffensiveFocus/DefensiveFocus rebound adjustments
+            if (p.OffensiveFocus != 0)
+            {
+                double rebAdj = RandomDouble(0.1);
+                // Post focus = more offensive rebounds; perimeter focus = fewer
+                if (p.OffensiveFocus == 3)
+                    r.OffensiveReboundsPer48Min = r.OriginalOffensiveReboundsPer48Min + rebAdj;
+                else if (p.OffensiveFocus == 1)
+                    r.OffensiveReboundsPer48Min = r.OriginalOffensiveReboundsPer48Min - rebAdj;
+            }
+            if (p.DefensiveFocus != 0)
+            {
+                double rebAdj = RandomDouble(0.1);
+                // Post defense focus = more defensive rebounds
+                if (p.DefensiveFocus == 3)
+                    r.DefensiveReboundsPer48Min = r.OriginalDefensiveReboundsPer48Min + rebAdj;
+                else if (p.DefensiveFocus == 1)
+                    r.DefensiveReboundsPer48Min = r.OriginalDefensiveReboundsPer48Min - rebAdj;
+            }
+        }
+    }
+
+    private void AdjustDefenseForGamePlan(Player p, ref int movDef, ref int penDef, ref int postDef, ref int transDef)
+    {
+        // DefensiveFocus: +1 to focused area, -1 to random other (mirrors offensive)
+        switch (p.DefensiveFocus)
+        {
+            case 1: // Perimeter defense focus
+                movDef++;
+                if (RandomDouble(1) <= 0.5) penDef--; else postDef--;
+                break;
+            case 2: // Driving defense focus
+                penDef++;
+                if (RandomDouble(1) <= 0.5) movDef--; else postDef--;
+                break;
+            case 3: // Post defense focus
+                postDef++;
+                if (RandomDouble(1) <= 0.5) movDef--; else penDef--;
+                break;
+        }
+
+        // DefensiveIntensity: probabilistic tightening/loosening
+        if (p.DefensiveIntensity > 0)
+        {
+            // Tightening: higher intensity = more likely to boost each area
+            for (int i = 0; i < p.DefensiveIntensity; i++)
+            {
+                if (IntRandom(3) == 1) movDef++;
+                if (IntRandom(3) == 1) penDef++;
+                if (IntRandom(3) == 1) postDef++;
+            }
+        }
+        else if (p.DefensiveIntensity < 0)
+        {
+            // Loosening: lower intensity = more likely to reduce each area
+            for (int i = 0; i < -p.DefensiveIntensity; i++)
+            {
+                if (IntRandom(3) == 1) movDef--;
+                if (IntRandom(3) == 1) penDef--;
+                if (IntRandom(3) == 1) postDef--;
+            }
+        }
+    }
+
     private void ApplyCoachOffenseAdjustments(int team, int adjForCoach,
         ref int dMov, ref int dPen, ref int dPost)
     {
@@ -2500,6 +2825,115 @@ public class GameSimulationEngine
     {
         if (n <= 0) return 0;
         return _random.NextDouble() * n; // 0 to n exclusive
+    }
+
+    #endregion
+
+    #region AI Coaching
+
+    private void UpdateOpponentRun(int scoreBefore1, int scoreBefore2)
+    {
+        int scored1 = _state.Score[1] - scoreBefore1;
+        int scored2 = _state.Score[2] - scoreBefore2;
+
+        // Team 1 (visitor) scoring run: incremented when team 1 scores, reset when team 2 scores
+        if (scored1 > 0)
+        {
+            _state.OpponentRun[2] += scored1; // Opponent of team 2
+            _state.OpponentRun[1] = 0;         // Team 1 scored, reset team 1's opponent run
+        }
+        if (scored2 > 0)
+        {
+            _state.OpponentRun[1] += scored2; // Opponent of team 1
+            _state.OpponentRun[2] = 0;
+        }
+    }
+
+    private void TryAutoTimeout(int teamSide)
+    {
+        if (teamSide < 1 || teamSide > 2) return;
+
+        // Only call timeouts for computer-controlled teams
+        if (!_state.AutoSubEnabled[teamSide]) return;
+
+        // Don't call if no timeouts available
+        if (_state.Timeouts.FullTimeouts[teamSide] <= 0 && _state.Timeouts.TwentySecTimeouts[teamSide] <= 0)
+            return;
+
+        // Don't call timeout if one was just called this possession
+        if (_state.Timeouts.TimeoutCalledThisPossession) return;
+
+        // Rule 1: Momentum break — opponent scored 8+ unanswered
+        if (_state.OpponentRun[teamSide] >= 8 && _state.Timeouts.FullTimeouts[teamSide] > 0)
+        {
+            CallTimeout(teamSide, false);
+            _state.OpponentRun[teamSide] = 0;
+            return;
+        }
+
+        // Rule 2: Late-game trailing — Q4, < 2 min, trailing by 1-6
+        if (_state.Quarter >= 4 && _state.TimeRemainingSeconds <= 120)
+        {
+            int scoreDiff = _state.Score[teamSide] - _state.Score[teamSide == 1 ? 2 : 1];
+            if (scoreDiff >= -6 && scoreDiff < 0 && _state.Timeouts.FullTimeouts[teamSide] > 0)
+            {
+                CallTimeout(teamSide, false);
+                return;
+            }
+        }
+
+        // Rule 3: Fatigue management — Q3+, 3+ starters with stamina < 20
+        if (_state.Quarter >= 3 && _state.Timeouts.TwentySecTimeouts[teamSide] > 0)
+        {
+            int fatigueCount = 0;
+            for (int pos = 1; pos <= 5; pos++)
+            {
+                int pl = _state.Lineup[teamSide, pos];
+                if (pl > 0 && pl <= 60 && _players[pl].GameState.CurrentStamina < 20)
+                    fatigueCount++;
+            }
+            if (fatigueCount >= 3)
+            {
+                CallTimeout(teamSide, true);
+                return;
+            }
+        }
+    }
+
+    private void AdaptComputerStrategy(int teamSide)
+    {
+        if (teamSide < 1 || teamSide > 2) return;
+        if (!_state.AutoSubEnabled[teamSide]) return;
+
+        int otherTeam = teamSide == 1 ? 2 : 1;
+        int scoreDiff = _state.Score[teamSide] - _state.Score[otherTeam];
+
+        int offset = teamSide == 1 ? 1 : 31;
+        int rosterSize = teamSide == 1
+            ? Math.Min(_visitorTeam.Roster.Count, 30)
+            : Math.Min(_homeTeam.Roster.Count, 30);
+
+        if (scoreDiff <= -10)
+        {
+            // Trailing by 10+: increase OffensiveIntensity for top players
+            for (int i = 0; i < Math.Min(5, rosterSize); i++)
+            {
+                var p = _players[offset + i];
+                if (p == null || string.IsNullOrEmpty(p.Name)) continue;
+                if (p.OffensiveIntensity < 2) p.OffensiveIntensity++;
+            }
+        }
+        else if (scoreDiff >= 10)
+        {
+            // Leading by 10+: decrease offense, increase defense
+            for (int i = 0; i < Math.Min(5, rosterSize); i++)
+            {
+                var p = _players[offset + i];
+                if (p == null || string.IsNullOrEmpty(p.Name)) continue;
+                if (p.OffensiveIntensity > -2) p.OffensiveIntensity--;
+                if (p.DefensiveIntensity < 2) p.DefensiveIntensity++;
+            }
+        }
     }
 
     #endregion

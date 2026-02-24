@@ -79,6 +79,18 @@ public class GameState
     public int VisitorIndex { get; set; }
     public int HomeIndex { get; set; }
 
+    // Timeout state
+    public TimeoutState Timeouts { get; set; } = new();
+
+    // Coach FGA budget for Called Shot system: per-player budget [1-60]
+    public double[] CoachFgaBudget { get; set; } = new double[61];
+
+    // Opponent scoring run tracker for AI timeout decisions: [1]=visitor, [2]=home
+    public int[] OpponentRun { get; set; } = new int[3];
+
+    // Designated ball handler per team for Called Shot: [1]=visitor, [2]=home (player index, 0=none)
+    public int[] DesignatedBallHandler { get; set; } = new int[3];
+
     // Play-by-play
     public List<string> PlayByPlay { get; set; } = new();
 

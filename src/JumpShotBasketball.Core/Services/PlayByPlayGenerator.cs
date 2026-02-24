@@ -121,6 +121,13 @@ public static class PlayByPlayGenerator
             : $"{playerName} is shaken up but stays in.";
     }
 
+    public static string Timeout(string teamName, bool twentySec)
+    {
+        return twentySec
+            ? $"20-second timeout called by {teamName}."
+            : $"Timeout called by {teamName}.";
+    }
+
     public static string EndOfQuarter(int quarter)
     {
         return quarter switch

@@ -41,6 +41,8 @@ public class TeamFinancial
 
     // Owner settings
     public decimal OwnerSalaryCap { get; set; }
+    public int OwnerPatience { get; set; } = 3;
+    public int PlayerSpending { get; set; } = 50;
 
     // Per-game revenue
     public decimal TicketsSold { get; set; }

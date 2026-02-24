@@ -75,4 +75,5 @@ public class Player
     public PlayerContract Contract { get; set; } = new();
     public PlayerGameState GameState { get; set; } = new();
     public PlayerSeasonHighs SeasonHighs { get; set; } = new();
+    public List<CareerSeasonEntry> CareerHistory { get; set; } = new();
 }

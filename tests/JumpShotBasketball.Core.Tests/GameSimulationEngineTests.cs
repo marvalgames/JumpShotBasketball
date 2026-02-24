@@ -217,9 +217,10 @@ public class GameSimulationEngineTests
         double avgVisitor = totalVisitor / 50.0;
         double avgHome = totalHome / 50.0;
 
-        // Average scores should be NBA-like (80-125)
-        avgVisitor.Should().BeInRange(80, 125, "Average visitor score should be NBA-like");
-        avgHome.Should().BeInRange(80, 125, "Average home score should be NBA-like");
+        // Average scores should be NBA-like (80-130)
+        // Upper bound widened slightly to accommodate AI coaching intensity boosts
+        avgVisitor.Should().BeInRange(80, 130, "Average visitor score should be NBA-like");
+        avgHome.Should().BeInRange(80, 130, "Average home score should be NBA-like");
     }
 
     [Fact]

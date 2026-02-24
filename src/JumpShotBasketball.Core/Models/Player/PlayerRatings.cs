@@ -81,6 +81,11 @@ public class PlayerRatings
     public double OriginalAdjustedThreePointersAttemptedPer48Min { get; set; }
     public double OriginalStealsPer48Min { get; set; }
     public double OriginalBlocksPer48Min { get; set; }
+    public double OriginalAdjustedTurnoversPer48Min { get; set; }
+    public double OriginalPersonalFoulsPer48Min { get; set; }
+    public double OriginalAssistsPer48Min { get; set; }
+    public double OriginalOffensiveReboundsPer48Min { get; set; }
+    public double OriginalDefensiveReboundsPer48Min { get; set; }
 
     // Projection ratings (m_prFga, m_prFgp, etc.)
     public int ProjectionFieldGoalsAttempted { get; set; }

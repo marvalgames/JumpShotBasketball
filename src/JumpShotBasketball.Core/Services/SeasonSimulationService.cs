@@ -34,6 +34,14 @@ public static class SeasonSimulationService
         // Apply injuries from the game
         ApplyGameInjuries(league, game, result, random);
 
+        // Process financials (home team gets full revenue, road teams get media only)
+        if (league.Settings.FinancialEnabled)
+        {
+            FinancialSimulationService.ProcessHomeGameFinancials(
+                league, game.HomeTeamIndex, game.VisitorTeamIndex, game.Type, random);
+            FinancialSimulationService.ProcessRoadGameFinancials(league, game.VisitorTeamIndex);
+        }
+
         return result;
     }
 
@@ -177,7 +185,13 @@ public static class SeasonSimulationService
         // 1. Heal injuries (1 day)
         InjuryService.HealInjuries(league, 1, random);
 
-        // 2. Set computer rotations
+        // 2. Run computer trades (if enabled)
+        if (league.Settings.ComputerTradesEnabled)
+        {
+            TradeService.RunTradingPeriod(league, 10, 1, random);
+        }
+
+        // 3. Set computer rotations
         RotationService.SetComputerRotations(league);
     }
 

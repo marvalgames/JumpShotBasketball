@@ -33,4 +33,18 @@ public static class LeagueConstants
 
     // Default city rating
     public const int DefaultCityRating = 3;
+
+    // Salary minimums by years of service (from Constants.h MIN0-MIN10)
+    public static readonly int[] SalaryMinimumByYos = { 35, 51, 59, 61, 64, 70, 76, 82, 89, 100, 103 };
+
+    // Salary maximums by years of service (from Constants.h MAX0-MAX10)
+    public static readonly int[] SalaryMaximumByYos = { 1063, 1063, 1063, 1063, 1063, 1063, 1063, 1275, 1275, 1275, 1488 };
+
+    // Mid-level exception minimum (from Constants.h MINEX)
+    public const int MidLevelExceptionMinimum = 120;
+
+    // Rookie scale salary caps
+    public const int RookieSalaryCapYear1 = 295;
+    public const int RookieSalaryCapYear2 = 317;
+    public const int RookieSalaryCapYear3 = 339;
 }

@@ -35,6 +35,12 @@ public class GameResult
     /// <summary>Home team index (1-based).</summary>
     public int HomeTeamIndex { get; init; }
 
+    /// <summary>Full + 20-sec timeouts used by the visitor team.</summary>
+    public int VisitorTimeoutsUsed { get; init; }
+
+    /// <summary>Full + 20-sec timeouts used by the home team.</summary>
+    public int HomeTimeoutsUsed { get; init; }
+
     public bool IsOvertime => QuartersPlayed > 4;
     public bool HomeWin => HomeScore > VisitorScore;
     public bool VisitorWin => VisitorScore > HomeScore;
