@@ -524,7 +524,7 @@ public class LeagueCreationServiceTests
     }
 
     [Fact]
-    public void InitializeAllPlayerRatings_SeasonStatsClearedAfter()
+    public void InitializeAllPlayerRatings_SeasonStatsPreserved()
     {
         var league = new League();
         LeagueCreationService.GenerateTeams(league, 2, new Random(42));
@@ -534,8 +534,9 @@ public class LeagueCreationServiceTests
         var allPlayers = league.Teams.SelectMany(t => t.Roster);
         allPlayers.Should().AllSatisfy(p =>
         {
-            p.SeasonStats.Games.Should().Be(0);
-            p.SeasonStats.Minutes.Should().Be(0);
+            // SeasonStats preserved for engine eligibility (Minutes >= 72)
+            p.SeasonStats.Games.Should().BeGreaterThan(0);
+            p.SeasonStats.Minutes.Should().BeGreaterThan(0);
         });
     }
 
@@ -627,6 +628,107 @@ public class LeagueCreationServiceTests
         // Each team owns its own pick by default
         league.DraftBoard!.DraftChart[0, 0, 0].Should().Be(0);
         league.DraftBoard.DraftChart[0, 0, 5].Should().Be(5);
+    }
+
+    // ── Per-48 Stats Integration Tests (Phase 20) ─────────────────────────
+
+    [Fact]
+    public void CreateNewLeague_PlayersHaveNonZeroPer48Stats()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        // Per-48 stats are computed by CalculateAllRatings then SeasonStats.Reset() clears stats
+        // but per-48 lives on Ratings, so should still be populated
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            p.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0);
+            p.Ratings.ThreePointersAttemptedPer48Min.Should().BeGreaterThan(0);
+            p.Ratings.OffensiveReboundsPer48Min.Should().BeGreaterThan(0);
+            p.Ratings.AssistsPer48Min.Should().BeGreaterThan(0);
+            p.Ratings.StealsPer48Min.Should().BeGreaterThan(0);
+            p.Ratings.MinutesPerGame.Should().BeGreaterThan(0);
+        });
+    }
+
+    [Fact]
+    public void CreateNewLeague_PlayersHaveNonZeroShootingPct()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            p.Ratings.FieldGoalPercentage.Should().BeGreaterThan(0);
+            p.Ratings.FreeThrowPercentage.Should().BeGreaterThan(0);
+            p.Ratings.ThreePointPercentage.Should().BeGreaterThan(0);
+        });
+    }
+
+    [Fact]
+    public void CreateNewLeague_Per48Stats_AreReasonable()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            // FGA per 48 should be in a reasonable range (2PT only)
+            p.Ratings.FieldGoalsAttemptedPer48Min.Should().BeInRange(1, 25);
+            // Steals per 48 should be reasonable
+            p.Ratings.StealsPer48Min.Should().BeInRange(0.1, 5);
+            // Minutes per game should be reasonable
+            p.Ratings.MinutesPerGame.Should().BeInRange(10, 42);
+            // Shooting percentages (×1000) should be in range
+            p.Ratings.FieldGoalPercentage.Should().BeInRange(200, 800);
+            p.Ratings.FreeThrowPercentage.Should().BeInRange(300, 1000);
+            p.Ratings.ThreePointPercentage.Should().BeInRange(150, 600);
+        });
+    }
+
+    [Fact]
+    public void CreateNewLeague_AdjustedVariants_MatchBase()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            p.Ratings.AdjustedFieldGoalsAttemptedPer48Min.Should().Be(p.Ratings.FieldGoalsAttemptedPer48Min);
+            p.Ratings.AdjustedThreePointersAttemptedPer48Min.Should().Be(p.Ratings.ThreePointersAttemptedPer48Min);
+            p.Ratings.AdjustedFoulsDrawnPer48Min.Should().Be(p.Ratings.FoulsDrawnPer48Min);
+            p.Ratings.AdjustedTurnoversPer48Min.Should().Be(p.Ratings.TurnoversPer48Min);
+            p.Ratings.AdjustedFieldGoalPercentage.Should().Be(p.Ratings.FieldGoalPercentage);
+        });
+    }
+
+    // ── Engine Eligibility Tests (Phase 21) ────────────────────────────────
+
+    [Fact]
+    public void CreateNewLeague_PlayersHaveEngineEligibleStats()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        // All players should have SeasonStats.Minutes >= 72 for engine eligibility
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            p.SeasonStats.Minutes.Should().BeGreaterThanOrEqualTo(72);
+        });
+    }
+
+    [Fact]
+    public void CreateNewLeague_SimulatedStatsStillZero()
+    {
+        var league = CreateSmallLeague(teams: 4, seed: 99);
+        var allPlayers = league.Teams.SelectMany(t => t.Roster);
+
+        // SimulatedStats should remain zeroed (games haven't started yet)
+        allPlayers.Should().AllSatisfy(p =>
+        {
+            p.SimulatedStats.Games.Should().Be(0);
+            p.SimulatedStats.Minutes.Should().Be(0);
+        });
     }
 
     // ── Edge Case Tests ────────────────────────────────────────────────────

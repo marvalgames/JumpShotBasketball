@@ -691,6 +691,18 @@ public static class FreeAgencyService
                         for (int p = 1; p <= 5; p++)
                             state.PositionValues[bestTeam, p] = newPosValues[p];
 
+                        // Log transaction
+                        league.Settings.NumberOfTransactions++;
+                        league.Transactions.Add(new Transaction
+                        {
+                            Id = league.Settings.NumberOfTransactions,
+                            Type = TransactionType.Signing,
+                            Description = $"{team.Name} signed FA {fa.Name} ({fa.Position})",
+                            TeamIndex1 = bestTeam,
+                            Team1Name = team.Name,
+                            PlayersInvolved = new List<int> { fa.Id }
+                        });
+
                         result.PlayersSigned++;
                         result.SigningDescriptions.Add(
                             $"{fa.Position} {fa.Name} signed with {team.Name} ({fa.Contract.ContractYears}yr/${fa.Contract.TotalSalary})");
@@ -762,6 +774,14 @@ public static class FreeAgencyService
                 if (rookie.Contract.IsFreeAgent && !rookie.Retired)
                     freeAgents.Add(rookie);
             }
+        }
+
+        // From in-season free agent pool (released/waived players)
+        foreach (var fa in league.FreeAgentPool)
+        {
+            if (string.IsNullOrEmpty(fa.Name)) continue;
+            if (!fa.Retired && !freeAgents.Contains(fa))
+                freeAgents.Add(fa);
         }
 
         return freeAgents;

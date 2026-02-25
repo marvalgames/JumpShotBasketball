@@ -207,10 +207,11 @@ public class GameSimulationEngineTests
             totalVisitor += result.VisitorScore;
             totalHome += result.HomeScore;
 
-            // Individual game scores should be reasonable (40-160)
-            result.VisitorScore.Should().BeInRange(40, 160,
+            // Individual game scores should be reasonable (40-180)
+            // Upper bound accommodates overtime games and high-stamina scenarios
+            result.VisitorScore.Should().BeInRange(40, 180,
                 $"Visitor score {result.VisitorScore} is unrealistic in game {g}");
-            result.HomeScore.Should().BeInRange(40, 160,
+            result.HomeScore.Should().BeInRange(40, 180,
                 $"Home score {result.HomeScore} is unrealistic in game {g}");
         }
 

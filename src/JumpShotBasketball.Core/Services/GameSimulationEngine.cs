@@ -235,8 +235,12 @@ public class GameSimulationEngine
                 double healthFactor = p.Health / 100.0;
                 if (healthFactor < 0.5) healthFactor = 0.5;
 
-                // Set per-game stamina
-                p.GameState.CurrentStamina = p.Ratings.Stamina > 0 ? p.Ratings.Stamina : 80;
+                // Set per-game stamina using coach endurance rating
+                int coachEndurance = team.Coach?.CoachEndurance ?? 3;
+                int calculatedStamina = StatisticsCalculator.CalculateStamina(
+                    p.SeasonStats.Games, p.SeasonStats.Minutes, coachEndurance);
+                p.Ratings.Stamina = calculatedStamina;
+                p.GameState.CurrentStamina = calculatedStamina;
 
                 eligible.Add((offset + i, p));
             }
@@ -1277,6 +1281,9 @@ public class GameSimulationEngine
         {
             p.GameState.GameInjury = gamesOut;
             _state.MustSub[_state.Possession] = player;
+
+            // Check for permanent injury effects (career-altering damage)
+            InjuryService.ApplyPermanentInjuryEffects(p, gamesOut, _random);
         }
 
         AddPbp(PlayByPlayGenerator.Injury(p.LastName, gamesOut));
@@ -2641,6 +2648,19 @@ public class GameSimulationEngine
                 if (RandomDouble(1) <= 0.5) mov--; else pen--;
                 break;
         }
+
+        // Port of Engine.cpp:4046-4068 — negative intensity reduces play attempts
+        if (p.OffensiveIntensity < 0)
+        {
+            if (IntRandom(4) > (p.OffensiveIntensity + 4))
+                trans--;
+            if (IntRandom(8) > (p.OffensiveIntensity + 8))
+                pen--;
+            if (IntRandom(8) > (p.OffensiveIntensity + 8))
+                mov--;
+            if (IntRandom(8) > (p.OffensiveIntensity + 8))
+                post--;
+        }
     }
 
     private void AdjustIntensityForGamePlan()
@@ -2761,6 +2781,19 @@ public class GameSimulationEngine
                 if (IntRandom(3) == 1) penDef--;
                 if (IntRandom(3) == 1) postDef--;
             }
+        }
+
+        // Port of Engine.cpp:4164-4186 — high offensive intensity makes player easier to defend
+        if (p.OffensiveIntensity > 0)
+        {
+            if (IntRandom(4) <= p.OffensiveIntensity)
+                transDef++;
+            if (IntRandom(8) <= p.OffensiveIntensity)
+                movDef++;
+            if (IntRandom(8) <= p.OffensiveIntensity)
+                postDef++;
+            if (IntRandom(8) <= p.OffensiveIntensity)
+                penDef++;
         }
     }
 

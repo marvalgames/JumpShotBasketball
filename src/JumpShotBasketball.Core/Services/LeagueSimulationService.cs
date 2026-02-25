@@ -34,6 +34,9 @@ public static class LeagueSimulationService
         random ??= Random.Shared;
         ValidateLeagueForSimulation(league);
 
+        // Verify rosters before season starts (C++ VerifyRosters pipeline)
+        RosterManagementService.ProcessRosterEmergencies(league, random);
+
         var result = new SeasonResult
         {
             Year = league.Settings.CurrentYear

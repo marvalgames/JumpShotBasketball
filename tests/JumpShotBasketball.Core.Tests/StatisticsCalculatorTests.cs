@@ -1,4 +1,5 @@
 using FluentAssertions;
+using JumpShotBasketball.Core.Models.Game;
 using JumpShotBasketball.Core.Models.Player;
 using JumpShotBasketball.Core.Services;
 
@@ -611,6 +612,481 @@ public class StatisticsCalculatorTests
         double withoutEmpty = StatisticsCalculator.CalculateLeagueAverageFactor(new[] { starter });
 
         withEmpty.Should().BeApproximately(withoutEmpty, 0.001);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Per-48 Stats tests
+    // ───────────────────────────────────────────────────────────────
+
+    private static Player CreatePlayerWithStarterStats() => new()
+    {
+        Age = 25,
+        SeasonStats = CreateStarterStatLine(),
+        Ratings = new PlayerRatings { Potential1 = 5, Potential2 = 5, Effort = 5 }
+    };
+
+    [Fact]
+    public void CalculatePer48Stats_ZeroMinutes_AllRemainZero()
+    {
+        var player = new Player
+        {
+            SeasonStats = new PlayerStatLine { Games = 82, Minutes = 0 },
+            Ratings = new PlayerRatings()
+        };
+
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().Be(0);
+        player.Ratings.ThreePointersAttemptedPer48Min.Should().Be(0);
+        player.Ratings.MinutesPerGame.Should().Be(0);
+        player.Ratings.FieldGoalPercentage.Should().Be(0);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ZeroGames_AllRemainZero()
+    {
+        var player = new Player
+        {
+            SeasonStats = new PlayerStatLine { Games = 0, Minutes = 2800 },
+            Ratings = new PlayerRatings()
+        };
+
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().Be(0);
+        player.Ratings.MinutesPerGame.Should().Be(0);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_FgaPer48_Is2PointOnly()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // 2PT FGA = FGA - 3PA = 1100 - 500 = 600
+        // Per 48 = 600 / 2800 * 48 = 10.286
+        double expected = 600.0 / 2800.0 * 48.0;
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_TfgaPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 500.0 / 2800.0 * 48.0;
+        player.Ratings.ThreePointersAttemptedPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_OrebPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 100.0 / 2800.0 * 48.0;
+        player.Ratings.OffensiveReboundsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_DrebPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // DREB = REB - OREB = 500 - 100 = 400
+        double expected = 400.0 / 2800.0 * 48.0;
+        player.Ratings.DefensiveReboundsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_AstPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 300.0 / 2800.0 * 48.0;
+        player.Ratings.AssistsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_StealsPer48_HasSpecialFactor()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // STL / Min * 48 * 5/6 * 11/10
+        double expected = 100.0 / 2800.0 * 48.0 * 5.0 / 6.0 * 11.0 / 10.0;
+        player.Ratings.StealsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ToPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 50.0 / 2800.0 * 48.0;
+        player.Ratings.TurnoversPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_BlkPer48_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 50.0 / 2800.0 * 48.0;
+        player.Ratings.BlocksPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_PfPer48_ReducedByTurnoverFraction()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // (PF - TO/10) / Min * 48 = (150 - 50/10) / 2800 * 48 = 145 / 2800 * 48
+        double expected = (150.0 - 50.0 / 10.0) / 2800.0 * 48.0;
+        player.Ratings.PersonalFoulsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_PfPer48_ClampedToZero()
+    {
+        // High TO, low PF → would go negative without clamp
+        var player = new Player
+        {
+            SeasonStats = new PlayerStatLine
+            {
+                Games = 82, Minutes = 2800,
+                PersonalFouls = 5, Turnovers = 200,
+                FieldGoalsAttempted = 100, FieldGoalsMade = 50,
+                FreeThrowsAttempted = 50, FreeThrowsMade = 40,
+                ThreePointersAttempted = 20, ThreePointersMade = 10,
+                Rebounds = 100, OffensiveRebounds = 30,
+                Assists = 50, Steals = 30, Blocks = 10
+            },
+            Ratings = new PlayerRatings()
+        };
+
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // (5 - 200/10) = 5 - 20 = -15 → clamped to 0
+        player.Ratings.PersonalFoulsPer48Min.Should().Be(0);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_FoulsDrawn_DefaultFoulRatio()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // FTA * 0.44 / Min * 48
+        double expected = 350.0 * 0.44 / 2800.0 * 48.0;
+        player.Ratings.FoulsDrawnPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_FoulsDrawn_CustomFoulRatio()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player, foulRatio: 0.5);
+
+        double expected = 350.0 * 0.5 / 2800.0 * 48.0;
+        player.Ratings.FoulsDrawnPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_MinutesPerGame_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 2800.0 / 82.0;
+        player.Ratings.MinutesPerGame.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_FgPct_Is2PointOnly()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // 2PT FGM = 500 - 200 = 300, 2PT FGA = 1100 - 500 = 600
+        // 300/600 * 1000 = 500
+        player.Ratings.FieldGoalPercentage.Should().Be(500);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_FtPct_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // 300/350 * 1000 = 857
+        player.Ratings.FreeThrowPercentage.Should().Be(857);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ThreePtPct_Correct()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // 200/500 * 1000 = 400
+        player.Ratings.ThreePointPercentage.Should().Be(400);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_AdjustedVariants_EqualBase()
+    {
+        var player = CreatePlayerWithStarterStats();
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.AdjustedFieldGoalsAttemptedPer48Min.Should().Be(player.Ratings.FieldGoalsAttemptedPer48Min);
+        player.Ratings.AdjustedThreePointersAttemptedPer48Min.Should().Be(player.Ratings.ThreePointersAttemptedPer48Min);
+        player.Ratings.AdjustedFoulsDrawnPer48Min.Should().Be(player.Ratings.FoulsDrawnPer48Min);
+        player.Ratings.AdjustedTurnoversPer48Min.Should().Be(player.Ratings.TurnoversPer48Min);
+        player.Ratings.AdjustedFieldGoalPercentage.Should().Be(player.Ratings.FieldGoalPercentage);
+        player.Ratings.ProjectionFieldGoalPercentage.Should().Be(player.Ratings.FieldGoalPercentage);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ZeroFga_PctIsZero()
+    {
+        var player = new Player
+        {
+            SeasonStats = new PlayerStatLine
+            {
+                Games = 10, Minutes = 200,
+                FieldGoalsMade = 0, FieldGoalsAttempted = 0,
+                ThreePointersMade = 0, ThreePointersAttempted = 0,
+                FreeThrowsMade = 0, FreeThrowsAttempted = 0,
+                Rebounds = 20, OffensiveRebounds = 5,
+                Assists = 10, Steals = 5, Turnovers = 3, Blocks = 2, PersonalFouls = 10
+            },
+            Ratings = new PlayerRatings()
+        };
+
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalPercentage.Should().Be(0);
+        player.Ratings.FreeThrowPercentage.Should().Be(0);
+        player.Ratings.ThreePointPercentage.Should().Be(0);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // FoulRatio tests
+    // ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CalculateFoulRatio_ReturnsExpected_FromAverages()
+    {
+        var avg = new LeagueAverages
+        {
+            PersonalFouls = 4.0,
+            Turnovers = 3.0,
+            FreeThrowsAttempted = 5.0
+        };
+
+        double result = StatisticsCalculator.CalculateFoulRatio(avg);
+
+        // (4.0 - 3.0 * 0.1) / 5.0 = 3.7 / 5.0 = 0.74
+        result.Should().BeApproximately(0.74, 0.001);
+    }
+
+    [Fact]
+    public void CalculateFoulRatio_ReturnsDefault_WhenZeroFta()
+    {
+        var avg = new LeagueAverages { FreeThrowsAttempted = 0 };
+
+        double result = StatisticsCalculator.CalculateFoulRatio(avg);
+
+        result.Should().Be(0.44);
+    }
+
+    [Fact]
+    public void CalculateFoulRatio_WorksWithDefaults()
+    {
+        var avg = new LeagueAverages();
+
+        double result = StatisticsCalculator.CalculateFoulRatio(avg);
+
+        // FTA defaults to 0, so should return default 0.44
+        result.Should().Be(0.44);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Rating + Per-48 pipeline integration tests
+    // (mirrors LeagueCreationService.InitializeAllPlayerRatings flow)
+    // ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RatingsPipeline_SetsPer48Stats()
+    {
+        var player = CreatePlayerWithStarterStats();
+
+        StatisticsCalculator.CalculateAllRatings(player);
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.ThreePointersAttemptedPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.OffensiveReboundsPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.DefensiveReboundsPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.AssistsPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.StealsPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.TurnoversPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.BlocksPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.PersonalFoulsPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.FoulsDrawnPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.MinutesPerGame.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void RatingsPipeline_SetsShootingPercentages()
+    {
+        var player = CreatePlayerWithStarterStats();
+
+        StatisticsCalculator.CalculateAllRatings(player);
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalPercentage.Should().BeGreaterThan(0);
+        player.Ratings.FreeThrowPercentage.Should().BeGreaterThan(0);
+        player.Ratings.ThreePointPercentage.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void RatingsPipeline_ZeroMinutes_Per48StatsRemainZero()
+    {
+        var player = new Player
+        {
+            Age = 25,
+            SeasonStats = CreateEmptyStatLine(),
+            Ratings = new PlayerRatings { Potential1 = 5, Potential2 = 5, Effort = 5 }
+        };
+
+        StatisticsCalculator.CalculateAllRatings(player);
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().Be(0);
+        player.Ratings.MinutesPerGame.Should().Be(0);
+        player.Ratings.FieldGoalPercentage.Should().Be(0);
+    }
+
+    [Fact]
+    public void RatingsPipeline_FgaPer48_Is2PointOnly()
+    {
+        var player = CreatePlayerWithStarterStats();
+
+        StatisticsCalculator.CalculateAllRatings(player);
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        // 2PT FGA = 1100 - 500 = 600, per 48 = 600/2800*48
+        double expected = 600.0 / 2800.0 * 48.0;
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    [Fact]
+    public void RatingsPipeline_StealsHaveSpecialFactor()
+    {
+        var player = CreatePlayerWithStarterStats();
+
+        StatisticsCalculator.CalculateAllRatings(player);
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        double expected = 100.0 / 2800.0 * 48.0 * 5.0 / 6.0 * 11.0 / 10.0;
+        player.Ratings.StealsPer48Min.Should().BeApproximately(expected, 0.001);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Per-48 explicit stat line overload tests (Phase 21)
+    // ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CalculatePer48Stats_ExplicitStatLine_ComputesFromProvided()
+    {
+        var player = new Player
+        {
+            SeasonStats = new PlayerStatLine(), // empty
+            Ratings = new PlayerRatings()
+        };
+        var provided = CreateStarterStatLine();
+
+        StatisticsCalculator.CalculatePer48Stats(player, provided);
+
+        // Should compute from provided stats, not empty SeasonStats
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.MinutesPerGame.Should().BeGreaterThan(0);
+        player.Ratings.FieldGoalPercentage.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ExplicitStatLine_IgnoresSeasonStats()
+    {
+        var player = new Player
+        {
+            SeasonStats = CreateBenchStatLine(), // different from provided
+            Ratings = new PlayerRatings()
+        };
+        var provided = CreateStarterStatLine();
+
+        StatisticsCalculator.CalculatePer48Stats(player, provided);
+
+        // Should use provided (starter: 2800 min / 82 games), not bench (900 min / 60 games)
+        double expectedMpg = 2800.0 / 82.0;
+        player.Ratings.MinutesPerGame.Should().BeApproximately(expectedMpg, 0.001);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ExplicitStatLine_ZeroMinutes_GuardWorks()
+    {
+        var player = new Player
+        {
+            SeasonStats = CreateStarterStatLine(), // has data
+            Ratings = new PlayerRatings()
+        };
+        var empty = new PlayerStatLine();
+
+        StatisticsCalculator.CalculatePer48Stats(player, empty);
+
+        // Empty provided → no-op, ratings stay at 0
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().Be(0);
+        player.Ratings.MinutesPerGame.Should().Be(0);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_ExplicitStatLine_FgaPer48_MatchesDirect()
+    {
+        var stats = CreateStarterStatLine();
+
+        // Via explicit overload
+        var player1 = new Player { SeasonStats = stats, Ratings = new PlayerRatings() };
+        StatisticsCalculator.CalculatePer48Stats(player1, stats);
+
+        // Via wrapper (reads SeasonStats)
+        var player2 = new Player { SeasonStats = stats, Ratings = new PlayerRatings() };
+        StatisticsCalculator.CalculatePer48Stats(player2);
+
+        // Same stats → identical results
+        player1.Ratings.FieldGoalsAttemptedPer48Min.Should().Be(player2.Ratings.FieldGoalsAttemptedPer48Min);
+        player1.Ratings.ThreePointersAttemptedPer48Min.Should().Be(player2.Ratings.ThreePointersAttemptedPer48Min);
+        player1.Ratings.FieldGoalPercentage.Should().Be(player2.Ratings.FieldGoalPercentage);
+        player1.Ratings.FreeThrowPercentage.Should().Be(player2.Ratings.FreeThrowPercentage);
+        player1.Ratings.MinutesPerGame.Should().Be(player2.Ratings.MinutesPerGame);
+    }
+
+    [Fact]
+    public void CalculatePer48Stats_BackwardCompat_StillReadsSeasonStats()
+    {
+        var player = CreatePlayerWithStarterStats();
+
+        // Original single-arg call still works
+        StatisticsCalculator.CalculatePer48Stats(player);
+
+        player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0);
+        player.Ratings.MinutesPerGame.Should().BeApproximately(2800.0 / 82.0, 0.001);
     }
 
     // ───────────────────────────────────────────────────────────────

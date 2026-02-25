@@ -161,9 +161,14 @@ public static class LeagueCreationService
         if (options.FinancialEnabled)
             InitializeFinancials(league, random);
         InitializeStaff(league, random);
+        ScoutingService.ApplyAllScoutAdjustments(league);
+        ScoutingService.ApplyAllCoachAdjustments(league);
         InitializeDraftBoard(league);
         ScheduleGenerationService.GenerateSchedule(league, options.GamesPerSeason, random: random);
         RotationService.SetComputerRotations(league);
+
+        // Calculate initial teammate chemistry ratings
+        TeamChemistryService.CalculateBetterForLeague(league, seasonStarted: false);
 
         // Initialize record book + franchise histories
         RecordBookService.EnsureInitialized(league);
@@ -395,19 +400,16 @@ public static class LeagueCreationService
                 // CalculateAllRatings uses SeasonStats to compute ODPT + TrueRating + TradeValue
                 StatisticsCalculator.CalculateAllRatings(player);
 
+                // Per-48 production stats and shooting percentages from generated SeasonStats
+                // Called separately (not inside CalculateAllRatings) because mid-season
+                // recalculations (e.g. TradeService) should not overwrite per-48 rates.
+                StatisticsCalculator.CalculatePer48Stats(player);
+
                 // Generate height/weight from ODPT ratings
                 RookieGenerationService.GenerateRandomHeightWeight(player, Random.Shared);
             }
         }
 
-        // Clear SeasonStats after rating computation (ready for season simulation)
-        foreach (var team in league.Teams)
-        {
-            foreach (var player in team.Roster)
-            {
-                player.SeasonStats.Reset();
-            }
-        }
     }
 
     internal static void InitializeFinancials(League league, Random random)

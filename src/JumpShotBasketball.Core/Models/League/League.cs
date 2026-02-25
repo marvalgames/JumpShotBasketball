@@ -26,4 +26,12 @@ public class League
     public DraftResult? LastDraftResult { get; set; }
     public RecordBook RecordBook { get; set; } = new();
     public List<FranchiseHistory> FranchiseHistories { get; set; } = new();
+    public List<HallOfFameEntry> HallOfFame { get; set; } = new();
+    public List<AllStarWeekendResult> AllStarWeekendHistory { get; set; } = new();
+
+    /// <summary>
+    /// Free agents available for in-season signing (released/undrafted players).
+    /// In C++, free agents occupy slots 961-1440 in the global player array.
+    /// </summary>
+    public List<Player.Player> FreeAgentPool { get; set; } = new();
 }

@@ -13,8 +13,6 @@ public class LeagueSimulationServiceTests
     /// <summary>
     /// Creates a small league with proper two-conference structure and valid playoff settings.
     /// Reassigns half the teams to the Western Conference so AllStar/Playoffs work correctly.
-    /// Also initializes SeasonStats.Minutes for all players so the GameSimulationEngine
-    /// includes them in the playing list (requires SeasonStats.Minutes >= 72).
     /// </summary>
     private static League CreateSmallLeague(int teams = 4, int seed = 42)
     {
@@ -39,53 +37,6 @@ public class LeagueSimulationServiceTests
         league.Settings.Round2Format = "None";
         league.Settings.Round3Format = "None";
         league.Settings.Round4Format = "None";
-
-        // Fix: LeagueCreationService computes Raw ODPT ratings (1-9) via CalculateAllRatings,
-        // but does NOT set per-48 stats or shooting percentages on Ratings.
-        // GameSimulationEngine requires: SeasonStats.Minutes >= 72 for eligibility,
-        // plus non-zero per-48 rates and FG%/FT%/3P% for scoring.
-        foreach (var team in league.Teams)
-        {
-            foreach (var player in team.Roster)
-            {
-                if (!string.IsNullOrEmpty(player.Name))
-                {
-                    // Engine eligibility: SeasonStats.Minutes >= 72
-                    player.SeasonStats.Minutes = 1500;
-                    player.SeasonStats.Games = 82;
-
-                    // Per-48 rates (required for touches distribution, coach budgets, team ratings)
-                    var r = player.Ratings;
-                    r.FieldGoalsAttemptedPer48Min = 15;
-                    r.AdjustedFieldGoalsAttemptedPer48Min = 15;
-                    r.ThreePointersAttemptedPer48Min = 5;
-                    r.AdjustedThreePointersAttemptedPer48Min = 5;
-                    r.FoulsDrawnPer48Min = 4;
-                    r.AdjustedFoulsDrawnPer48Min = 4;
-                    r.TurnoversPer48Min = 2.5;
-                    r.AdjustedTurnoversPer48Min = 2.5;
-                    r.OffensiveReboundsPer48Min = 2;
-                    r.DefensiveReboundsPer48Min = 5;
-                    r.AssistsPer48Min = 4;
-                    r.StealsPer48Min = 1.5;
-                    r.BlocksPer48Min = 0.5;
-                    r.PersonalFoulsPer48Min = 3.5;
-
-                    // Shooting percentages (×1000 scale: 450 = 45.0%)
-                    r.FieldGoalPercentage = 450;
-                    r.AdjustedFieldGoalPercentage = 450;
-                    r.FreeThrowPercentage = 750;
-                    r.ThreePointPercentage = 350;
-                    r.ProjectionFieldGoalPercentage = 450;
-
-                    // Game readiness
-                    r.Stamina = 80;
-                    r.Consistency = 3;
-                    r.Clutch = 50;
-                    r.MinutesPerGame = player.Starter == 1 ? 30 : 15;
-                }
-            }
-        }
 
         return league;
     }
@@ -601,4 +552,26 @@ public class LeagueSimulationServiceTests
         act.Should().NotThrow();
     }
 
+    // ── Phase 21 Regression Tests ─────────────────────────────────────
+
+    [Fact]
+    public void SimulateFullCycle_SecondSeasonPlayersEligible()
+    {
+        var league = CreateSmallLeague();
+
+        // Complete one full cycle (season + off-season)
+        LeagueSimulationService.SimulateFullCycle(league, new Random(42));
+
+        // After off-season, players should still have engine-eligible stats
+        foreach (var team in league.Teams)
+        {
+            foreach (var player in team.Roster.Where(p => !string.IsNullOrEmpty(p.Name)))
+            {
+                player.SeasonStats.Minutes.Should().BeGreaterThan(0,
+                    $"player {player.Name} should have SeasonStats for engine eligibility");
+                player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0,
+                    $"player {player.Name} should have per-48 rates for the engine");
+            }
+        }
+    }
 }

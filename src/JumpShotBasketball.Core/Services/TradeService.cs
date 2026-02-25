@@ -94,6 +94,10 @@ public static class TradeService
             offers++;
         }
 
+        // Recalculate teammate chemistry after trades
+        if (result.TradesMade > 0)
+            TeamChemistryService.CalculateBetterForLeague(league, seasonStarted: league.Schedule.SeasonStarted);
+
         return result;
     }
 
@@ -369,6 +373,10 @@ public static class TradeService
         // Reset rotations for affected teams
         RecalculateTeamRatings(team1);
         RecalculateTeamRatings(team2);
+
+        // Re-sort rosters after trade
+        RosterSortingService.SortTeamRoster(team1);
+        RosterSortingService.SortTeamRoster(team2);
     }
 
     /// <summary>

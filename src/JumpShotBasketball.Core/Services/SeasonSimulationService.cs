@@ -191,8 +191,18 @@ public static class SeasonSimulationService
             TradeService.RunTradingPeriod(league, 10, 1, random);
         }
 
+        // 2b. Attempt in-season contract extensions
+        if (league.Settings.FreeAgencyEnabled)
+        {
+            int daysPassed = league.Schedule.Games.Count(g => g.Played && g.Type == GameType.League);
+            ContractNegotiationService.ProcessDayExtensions(league, daysPassed, random);
+        }
+
         // 3. Set computer rotations
         RotationService.SetComputerRotations(league);
+
+        // 4. Process roster emergencies (release/sign to maintain valid rosters)
+        RosterManagementService.ProcessRosterEmergencies(league, random);
     }
 
     private static void ApplyGameInjuries(League league, ScheduledGame game, GameResult result, Random random)

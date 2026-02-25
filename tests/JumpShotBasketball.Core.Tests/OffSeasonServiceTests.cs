@@ -365,4 +365,152 @@ public class OffSeasonServiceTests
         result.NewYear.Should().Be(2025);
         result.RetiredPlayerNames.Should().NotBeNull();
     }
+
+    // ── Per-48 Recomputation (Phase 21) ────────────────────────────
+
+    [Fact]
+    public void AdvanceSeason_RecomputesPer48AfterDevelopment()
+    {
+        var league = CreateTestLeague(3);
+
+        OffSeasonService.AdvanceSeason(league, new Random(42));
+
+        // After off-season, all remaining players should have non-zero per-48 rates
+        foreach (var player in league.Teams[0].Roster.Where(p => !string.IsNullOrEmpty(p.Name)))
+        {
+            player.Ratings.FieldGoalsAttemptedPer48Min.Should().BeGreaterThan(0);
+            player.Ratings.MinutesPerGame.Should().BeGreaterThan(0);
+        }
+    }
+
+    [Fact]
+    public void AdvanceSeason_SeasonStatsPopulatedFromDevelopedStats()
+    {
+        var league = CreateTestLeague(3);
+
+        OffSeasonService.AdvanceSeason(league, new Random(42));
+
+        // SeasonStats should be populated for engine eligibility (Minutes >= 72)
+        foreach (var player in league.Teams[0].Roster.Where(p => !string.IsNullOrEmpty(p.Name)))
+        {
+            player.SeasonStats.Minutes.Should().BeGreaterThan(0);
+            player.SeasonStats.Games.Should().BeGreaterThan(0);
+        }
+    }
+
+    [Fact]
+    public void AdvanceSeason_ShootingPct_UpdatedFromDevelopedStats()
+    {
+        var league = CreateTestLeague(3);
+
+        OffSeasonService.AdvanceSeason(league, new Random(42));
+
+        foreach (var player in league.Teams[0].Roster.Where(p => !string.IsNullOrEmpty(p.Name)))
+        {
+            // At least one shooting pct should be non-zero
+            (player.Ratings.FieldGoalPercentage + player.Ratings.FreeThrowPercentage +
+             player.Ratings.ThreePointPercentage).Should().BeGreaterThan(0);
+        }
+    }
+
+    [Fact]
+    public void AdvanceSeason_AdjustedVariants_MatchBase()
+    {
+        var league = CreateTestLeague(3);
+
+        OffSeasonService.AdvanceSeason(league, new Random(42));
+
+        foreach (var player in league.Teams[0].Roster.Where(p => !string.IsNullOrEmpty(p.Name)))
+        {
+            player.Ratings.AdjustedFieldGoalsAttemptedPer48Min
+                .Should().Be(player.Ratings.FieldGoalsAttemptedPer48Min);
+            player.Ratings.AdjustedThreePointersAttemptedPer48Min
+                .Should().Be(player.Ratings.ThreePointersAttemptedPer48Min);
+            player.Ratings.AdjustedFoulsDrawnPer48Min
+                .Should().Be(player.Ratings.FoulsDrawnPer48Min);
+            player.Ratings.AdjustedTurnoversPer48Min
+                .Should().Be(player.Ratings.TurnoversPer48Min);
+        }
+    }
+
+    [Fact]
+    public void AdvanceSeason_PlayersWithZeroGames_Skipped()
+    {
+        var league = CreateTestLeague(2);
+        // Simulate an injured-all-season player with zero games
+        var injuredPlayer = league.Teams[0].Roster[1];
+        injuredPlayer.SimulatedStats.Reset();
+        injuredPlayer.SimulatedStats.Games = 0;
+        injuredPlayer.SimulatedStats.Minutes = 0;
+
+        OffSeasonService.AdvanceSeason(league, new Random(42));
+
+        // Injured player should not crash and per-48 should remain at 0
+        // (they have no developed stats to compute from)
+        // Just verify no exception was thrown - the method completed
+        league.Settings.CurrentYear.Should().Be(2025);
+    }
+
+    [Fact]
+    public void CopyStatLine_CopiesAllFields()
+    {
+        var source = new PlayerStatLine
+        {
+            Games = 82, Minutes = 2800,
+            FieldGoalsMade = 500, FieldGoalsAttempted = 1100,
+            FreeThrowsMade = 300, FreeThrowsAttempted = 350,
+            ThreePointersMade = 200, ThreePointersAttempted = 500,
+            OffensiveRebounds = 100, Rebounds = 500,
+            Assists = 300, Steals = 100, Turnovers = 50,
+            Blocks = 50, PersonalFouls = 150
+        };
+        var dest = new PlayerStatLine();
+
+        OffSeasonService.CopyStatLine(source, dest);
+
+        dest.Games.Should().Be(82);
+        dest.Minutes.Should().Be(2800);
+        dest.FieldGoalsMade.Should().Be(500);
+        dest.FieldGoalsAttempted.Should().Be(1100);
+        dest.FreeThrowsMade.Should().Be(300);
+        dest.FreeThrowsAttempted.Should().Be(350);
+        dest.ThreePointersMade.Should().Be(200);
+        dest.ThreePointersAttempted.Should().Be(500);
+        dest.OffensiveRebounds.Should().Be(100);
+        dest.Rebounds.Should().Be(500);
+        dest.Assists.Should().Be(300);
+        dest.Steals.Should().Be(100);
+        dest.Turnovers.Should().Be(50);
+        dest.Blocks.Should().Be(50);
+        dest.PersonalFouls.Should().Be(150);
+    }
+
+    [Fact]
+    public void ResetSeasonState_ClearsSimulatedStats()
+    {
+        var league = CreateTestLeague(1);
+        var player = league.Teams[0].Roster[0];
+        player.SimulatedStats.Games.Should().BeGreaterThan(0, "precondition");
+
+        OffSeasonService.ResetSeasonState(league);
+
+        player.SimulatedStats.Games.Should().Be(0);
+        player.SimulatedStats.Minutes.Should().Be(0);
+    }
+
+    [Fact]
+    public void ResetSeasonState_DoesNotClearSeasonStats()
+    {
+        var league = CreateTestLeague(1);
+        var player = league.Teams[0].Roster[0];
+        // Pre-populate SeasonStats (as AdvanceSeason would do)
+        player.SeasonStats.Games = 82;
+        player.SeasonStats.Minutes = 2800;
+
+        OffSeasonService.ResetSeasonState(league);
+
+        // ResetSeasonState clears SimulatedStats but NOT SeasonStats
+        player.SeasonStats.Games.Should().Be(82);
+        player.SeasonStats.Minutes.Should().Be(2800);
+    }
 }

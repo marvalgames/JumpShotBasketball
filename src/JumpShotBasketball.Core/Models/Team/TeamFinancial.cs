@@ -112,6 +112,12 @@ public class TeamFinancial
     // Stadium
     public int StadiumValue { get; set; }
 
+    // Salary cap exception tracking (per-season, reset by OffSeasonService)
+    public bool MidLevelExceptionUsed { get; set; }
+    public int MidLevelExceptionOffered { get; set; } = -1;
+    public bool MillionDollarExceptionUsed { get; set; }
+    public int MillionDollarExceptionOffered { get; set; } = -1;
+
     // Relocation
     public int PossibleMoveScore { get; set; }
     public bool PossibleMoveCity { get; set; }

@@ -15,4 +15,5 @@ public class OffSeasonResult
     public DraftResult? DraftResult { get; set; }
     public FreeAgencyResult? FreeAgencyResult { get; set; }
     public StaffManagementResult? StaffResult { get; set; }
+    public int OffSeasonInjuries { get; set; }
 }

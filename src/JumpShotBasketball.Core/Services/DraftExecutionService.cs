@@ -300,6 +300,18 @@ public static class DraftExecutionService
             // Add to team roster
             team.Roster.Add(rookie);
 
+            // Log transaction
+            league.Settings.NumberOfTransactions++;
+            league.Transactions.Add(new Transaction
+            {
+                Id = league.Settings.NumberOfTransactions,
+                Type = TransactionType.DraftPick,
+                Description = $"{team.Name} selected {rookie.Name} ({rookie.Position}) with pick #{pickNumber}",
+                TeamIndex1 = pickingTeamIndex,
+                Team1Name = team.Name,
+                PlayersInvolved = new List<int> { rookie.Id }
+            });
+
             // Record selection
             result.Selections.Add(new DraftSelection
             {

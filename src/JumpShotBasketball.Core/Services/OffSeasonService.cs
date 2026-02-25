@@ -26,6 +26,11 @@ public static class OffSeasonService
         // 1. Heal remaining injuries (~120 days off-season)
         InjuryService.HealInjuries(league, 120, random);
 
+        // 1b. Generate off-season injuries (players can get hurt during off-season)
+        int offSeasonInjuries = 0;
+        if (league.Settings.InjuriesEnabled)
+            offSeasonInjuries = InjuryService.ProcessOffSeasonInjuries(league, random);
+
         // 2. Clear rookie flags
         ClearRookieFlags(league);
 
@@ -59,8 +64,15 @@ public static class OffSeasonService
             }
         }
 
+        // 4a. Apply scout adjustments to projection ratings
+        ScoutingService.ApplyAllScoutAdjustments(league);
+
         // 5. Process retirements
         var retiredNames = RetirementService.ProcessRetirements(league, random);
+
+        // 5-hof. Evaluate retired players for Hall of Fame
+        var hofInductees = HallOfFameService.EvaluateRetiredPlayersForHallOfFame(league);
+        league.HallOfFame.AddRange(hofInductees);
 
         // 5-staff. Run staff lifecycle (after player retirements, before draft)
         StaffManagementResult? staffResult = null;
@@ -97,14 +109,40 @@ public static class OffSeasonService
             faResult = FreeAgencyService.RunFreeAgencyPeriod(league, 15, random);
         }
 
+        // 5d-b. Clear in-season free agent pool (absorbed into FA process)
+        league.FreeAgentPool.Clear();
+
         // 5e. Off-season trading window (after FA period)
         if (league.Settings.ComputerTradesEnabled)
         {
             TradeService.RunTradingPeriod(league, 50, 5, random);
         }
 
+        // 5f. Sort rosters after draft, FA, and trades
+        RosterSortingService.SortAllTeamRosters(league);
+
         // 6. Apply player development (aging/improvement/decline)
         PlayerDevelopmentService.DevelopPlayers(league, random);
+
+        // 6b. Recompute per-48 stats from developed SimulatedStats and
+        // copy to SeasonStats for engine eligibility (SeasonStats.Minutes >= 72)
+        foreach (var team in league.Teams)
+        {
+            foreach (var player in team.Roster)
+            {
+                if (string.IsNullOrEmpty(player.Name)) continue;
+                if (player.SimulatedStats.Minutes <= 0 || player.SimulatedStats.Games <= 0) continue;
+
+                // Copy developed stats → SeasonStats (engine reads SeasonStats for eligibility)
+                CopyStatLine(player.SimulatedStats, player.SeasonStats);
+
+                // Recompute per-48 from developed stats
+                StatisticsCalculator.CalculatePer48Stats(player, player.SimulatedStats);
+            }
+        }
+
+        // 6c. Calculate teammate chemistry ratings (Better)
+        TeamChemistryService.CalculateBetterForLeague(league, seasonStarted: false);
 
         // 6a. Archive franchise season records
         FranchiseHistoryService.ArchiveSeasonRecords(league, previousYear);
@@ -120,6 +158,9 @@ public static class OffSeasonService
         int newFreeAgents = 0;
         ApplyStartSeasonAttributes(league, true, ref contractsExpired, ref newFreeAgents, random);
 
+        // 9b. Apply coach adjustments to true ratings and trade values
+        ScoutingService.ApplyAllCoachAdjustments(league);
+
         // 9a. End-of-season financial adjustments
         if (league.Settings.FinancialEnabled)
         {
@@ -128,6 +169,9 @@ public static class OffSeasonService
 
         // 10. Set computer rotations
         RotationService.SetComputerRotations(league);
+
+        // 10b. Final roster sort by position and value
+        RosterSortingService.SortAllTeamRosters(league);
 
         return new OffSeasonResult
         {
@@ -140,7 +184,8 @@ public static class OffSeasonService
             RookiesGenerated = rookiesGenerated,
             DraftResult = draftResult,
             FreeAgencyResult = faResult,
-            StaffResult = staffResult
+            StaffResult = staffResult,
+            OffSeasonInjuries = offSeasonInjuries
         };
     }
 
@@ -162,6 +207,10 @@ public static class OffSeasonService
         // Archive awards before clearing
         if (league.Awards != null)
             league.AwardsHistory.Add(league.Awards);
+
+        // Archive all-star weekend data before clearing
+        if (league.AllStarWeekend != null)
+            league.AllStarWeekendHistory.Add(league.AllStarWeekend);
 
         // Clear bracket, awards, leaderboard, all-star
         league.Bracket = null;
@@ -211,6 +260,12 @@ public static class OffSeasonService
             {
                 FinancialSimulationService.ClearBudgetData(team.Financial);
             }
+
+            // Reset salary cap exception flags
+            team.Financial.MidLevelExceptionUsed = false;
+            team.Financial.MidLevelExceptionOffered = -1;
+            team.Financial.MillionDollarExceptionUsed = false;
+            team.Financial.MillionDollarExceptionOffered = -1;
 
             // Reset team records
             team.Record.Wins = 0;
@@ -335,5 +390,27 @@ public static class OffSeasonService
                 player.Contract.IsRookie = false;
             }
         }
+    }
+
+    /// <summary>
+    /// Copies all 15 stat fields from source to destination.
+    /// </summary>
+    internal static void CopyStatLine(PlayerStatLine source, PlayerStatLine dest)
+    {
+        dest.Games = source.Games;
+        dest.Minutes = source.Minutes;
+        dest.FieldGoalsMade = source.FieldGoalsMade;
+        dest.FieldGoalsAttempted = source.FieldGoalsAttempted;
+        dest.FreeThrowsMade = source.FreeThrowsMade;
+        dest.FreeThrowsAttempted = source.FreeThrowsAttempted;
+        dest.ThreePointersMade = source.ThreePointersMade;
+        dest.ThreePointersAttempted = source.ThreePointersAttempted;
+        dest.OffensiveRebounds = source.OffensiveRebounds;
+        dest.Rebounds = source.Rebounds;
+        dest.Assists = source.Assists;
+        dest.Steals = source.Steals;
+        dest.Turnovers = source.Turnovers;
+        dest.Blocks = source.Blocks;
+        dest.PersonalFouls = source.PersonalFouls;
     }
 }

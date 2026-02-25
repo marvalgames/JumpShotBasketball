@@ -1,4 +1,5 @@
 using JumpShotBasketball.Core.Models.Player;
+using JumpShotBasketball.Core.Models.Game;
 using JumpShotBasketball.Core.Models.League;
 
 namespace JumpShotBasketball.Core.Services;
@@ -299,6 +300,40 @@ public static class StatisticsCalculator
     }
 
     /// <summary>
+    /// Coach-adjusted true rating simple — same gun+skill formula but with coach factors per category.
+    /// Ported from CPlayer::SetAdjTrueRatingSimple() — Player.h:1494-1520.
+    /// Each stat component is multiplied by the corresponding coach skill factor.
+    /// </summary>
+    public static double CalculateCoachAdjustedTrueRatingSimple(
+        PlayerStatLine stats, double shootFactor, double scoreFactor,
+        double reboundFactor, double passFactor, double defendFactor)
+    {
+        double fgm = stats.FieldGoalsMade;
+        double tfgm = stats.ThreePointersMade;
+        double fga = stats.FieldGoalsAttempted;
+        double ftm = stats.FreeThrowsMade;
+        double fta = stats.FreeThrowsAttempted;
+        double oreb = stats.OffensiveRebounds;
+        double reb = stats.Rebounds;
+        double ast = stats.Assists;
+        double stl = stats.Steals;
+        double to = stats.Turnovers;
+        double blk = stats.Blocks;
+
+        double gun = fgm * shootFactor + tfgm * shootFactor - ((fga * scoreFactor - fgm * shootFactor) * 2.0 / 3.0);
+        gun += ftm * shootFactor - (fta * scoreFactor / 2.0);
+        gun += (fta * scoreFactor - ftm * shootFactor) / 6.0;
+        gun *= 3.0 / 2.0;
+
+        double skill = oreb * reboundFactor * 2.0 / 3.0 + (reb * reboundFactor - oreb * reboundFactor) / 3.0;
+        skill += stl * defendFactor - to * passFactor + blk * defendFactor;
+        skill += ast * passFactor * 4.0 / 5.0;
+        skill *= 3.0 / 4.0;
+
+        return gun + skill;
+    }
+
+    /// <summary>
     /// Full true rating with per-game normalization and logistic transform.
     /// Ported from CPlayer::SetTrueRating() — Player.h:1379-1520.
     /// </summary>
@@ -438,6 +473,101 @@ public static class StatisticsCalculator
         tru = tru * games - games / 2.0;
 
         return tru;
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Per-48 production stats & shooting percentages
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Calculates the foul ratio from league averages.
+    /// Used as input to CalculatePer48Stats for fouls-drawn computation.
+    /// Ported from C++ Engine.cpp foul ratio calculation.
+    /// </summary>
+    public static double CalculateFoulRatio(LeagueAverages averages)
+    {
+        if (averages.FreeThrowsAttempted <= 0) return 0.44;
+        return (averages.PersonalFouls - averages.Turnovers * 0.1) / averages.FreeThrowsAttempted;
+    }
+
+    /// <summary>
+    /// Computes per-48-minute production rates and shooting percentages from an explicit stat line.
+    /// Writes results to player.Ratings. Guards: skip if Minutes == 0 or Games == 0.
+    /// Ported from C++ Engine.cpp per-48 calculations.
+    /// Note: FieldGoalsAttemptedPer48Min stores 2-point FGA only (total FGA minus 3PA),
+    /// and FieldGoalPercentage is 2-point FG% only. This matches C++ Engine.cpp behavior.
+    /// </summary>
+    public static void CalculatePer48Stats(Player player, PlayerStatLine stats, double foulRatio = 0.44)
+    {
+        var s = stats;
+        var r = player.Ratings;
+
+        if (s.Minutes <= 0 || s.Games <= 0) return;
+
+        double min = s.Minutes;
+        double games = s.Games;
+
+        // 2-point only (matches C++ Engine.cpp behavior)
+        int twoPtFga = s.FieldGoalsAttempted - s.ThreePointersAttempted;
+        int twoPtFgm = s.FieldGoalsMade - s.ThreePointersMade;
+
+        // Per-48 rates
+        r.FieldGoalsAttemptedPer48Min = (double)twoPtFga / min * 48.0;
+        r.ThreePointersAttemptedPer48Min = (double)s.ThreePointersAttempted / min * 48.0;
+        r.OffensiveReboundsPer48Min = (double)s.OffensiveRebounds / min * 48.0;
+        r.DefensiveReboundsPer48Min = (double)(s.Rebounds - s.OffensiveRebounds) / min * 48.0;
+        r.AssistsPer48Min = (double)s.Assists / min * 48.0;
+        r.StealsPer48Min = (double)s.Steals / min * 48.0 * 5.0 / 6.0 * 11.0 / 10.0;
+        r.TurnoversPer48Min = (double)s.Turnovers / min * 48.0;
+        r.BlocksPer48Min = (double)s.Blocks / min * 48.0;
+        r.PersonalFoulsPer48Min = Math.Max(0, (double)(s.PersonalFouls - s.Turnovers / 10) / min * 48.0);
+        r.FoulsDrawnPer48Min = (double)s.FreeThrowsAttempted * foulRatio / min * 48.0;
+        r.MinutesPerGame = min / games;
+
+        // Adjusted variants = base values initially (engine overwrites during games)
+        r.AdjustedFieldGoalsAttemptedPer48Min = r.FieldGoalsAttemptedPer48Min;
+        r.AdjustedThreePointersAttemptedPer48Min = r.ThreePointersAttemptedPer48Min;
+        r.AdjustedFoulsDrawnPer48Min = r.FoulsDrawnPer48Min;
+        r.AdjustedTurnoversPer48Min = r.TurnoversPer48Min;
+
+        // Shooting percentages (integer × 1000)
+        r.FieldGoalPercentage = twoPtFga > 0 ? (int)Math.Round((double)twoPtFgm / twoPtFga * 1000) : 0;
+        r.FreeThrowPercentage = s.FreeThrowsAttempted > 0 ? (int)Math.Round((double)s.FreeThrowsMade / s.FreeThrowsAttempted * 1000) : 0;
+        r.ThreePointPercentage = s.ThreePointersAttempted > 0 ? (int)Math.Round((double)s.ThreePointersMade / s.ThreePointersAttempted * 1000) : 0;
+        r.AdjustedFieldGoalPercentage = r.FieldGoalPercentage;
+        r.ProjectionFieldGoalPercentage = r.FieldGoalPercentage;
+
+        // Assist-to-turnover ratio (C++ Player.h:1813-1825)
+        r.AstToRatio = s.Turnovers > 0
+            ? (double)s.Assists / s.Turnovers
+            : (double)s.Assists;
+    }
+
+    /// <summary>
+    /// Computes per-48-minute production rates and shooting percentages from SeasonStats.
+    /// Convenience wrapper that delegates to the explicit stat line overload.
+    /// </summary>
+    public static void CalculatePer48Stats(Player player, double foulRatio = 0.44)
+    {
+        CalculatePer48Stats(player, player.SeasonStats, foulRatio);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Stamina
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Calculates per-game stamina from stats and coach endurance rating.
+    /// Ported from CPlayer::SetGameStamina() — Player.h:5595-5601.
+    /// </summary>
+    public static int CalculateStamina(int games, int minutes, int coachEndurance)
+    {
+        if (games <= 0) return 480;
+        double stamina = (double)minutes / games / 3.0 * 60.0;
+        double factor = 1.0 + coachEndurance / 50.0;
+        stamina *= factor;
+        if (stamina < 480) stamina = 480;
+        return (int)stamina;
     }
 
     // ───────────────────────────────────────────────────────────────

@@ -43,6 +43,9 @@ public static class LeagueConstants
     // Mid-level exception minimum (from Constants.h MINEX)
     public const int MidLevelExceptionMinimum = 120;
 
+    // Mid-level exception amount (from Constants.h MIDEX = 450)
+    public const int MidLevelExceptionAmount = 450;
+
     // Rookie scale salary caps
     public const int RookieSalaryCapYear1 = 295;
     public const int RookieSalaryCapYear2 = 317;
